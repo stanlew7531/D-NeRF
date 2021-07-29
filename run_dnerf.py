@@ -661,12 +661,13 @@ def train():
     # Load data
 
     if args.dataset_type == 'blender':
+        print("Loading Blender...")
         images, poses, times, render_poses, render_times, hwf, i_split = load_blender_data(args.datadir, args.half_res, args.testskip)
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
 
         near = 0.5#2.
-        far = 3.#6.
+        far = 3.5#6.
 
         if args.white_bkgd:
             images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
@@ -1031,5 +1032,5 @@ def train():
 
 if __name__=='__main__':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
+    print("starting training process")
     train()
