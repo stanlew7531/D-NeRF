@@ -4,6 +4,7 @@ import os
 import shutil
 import glob
 import json
+from sklearn.model_selection import ShuffleSplit
 from scipy.spatial.transform import Rotation as R
 
 def prep_folders(base_dir):
@@ -27,17 +28,21 @@ val_portion = 0.1
 
 #assert(train_portion + test_portion + val_portion == 1.0, "train/test/val split must == 1.0")
 
-num_cameras = 20
-num_frames = 30
+num_cameras = 15
+num_frames = 60
 W = rel_data['intrinsic']['resX']
 H = rel_data['intrinsic']['resY']
 fx = rel_data['intrinsic']['fx']
 
 camera_angle_x = 2 * np.arctan2(W, 2 * fx)
 
-entries = []
+time_entries = {}
 
+apply_static_transform = True
+static_transform = np.eye(4)
+static_transform[0:3,0:3] = R.from_euler('x',180,degrees=True).as_matrix()
 convertCV_GL = True
+inv_extrinsic = False
 
 K_gl = np.array([[1,0,0,0],\
                 [0.0, -1, 0, 0.0],\
@@ -48,39 +53,70 @@ for cam_idx in range(num_cameras):
     for frame_idx in range(num_frames):
         image_file_path = os.path.join(images_dir, "camera_{0:0>3d}".format(cam_idx), "frame_{0:0>2d}.png".format(frame_idx))
         camera_extrinsic = np.array(rel_data['extrinsic']["camera_{0:0>3d}".format(cam_idx)])
+        frame_time = float(frame_idx) / float(num_frames-1)
+
+        if(apply_static_transform):
+            camera_extrinsic = np.matmul(static_transform, camera_extrinsic)
         if convertCV_GL:
-            camera_extrinsic = np.matmul(camera_extrinsic, np.linalg.inv(K_gl))
-        entry = {"image_fname":image_file_path, "extrinsic":camera_extrinsic, "time":float(frame_idx) / float(num_frames-1)}
-        entries.append(entry)
+            camera_extrinsic = np.matmul(camera_extrinsic, K_gl)
+        if inv_extrinsic:
+            camera_extrinsic = np.linalg.inv(camera_extrinsic)
 
-np.random.shuffle(entries)
+        entry = {"image_fname":image_file_path, "extrinsic":camera_extrinsic, "time":frame_time}
+        if(frame_time in time_entries):
+            time_entries[frame_time].append(entry)
+        else:
+            time_entries[frame_time] = [entry]
 
-total_entries = num_cameras * num_frames
-train_cutoff = int(train_portion * total_entries)
-test_cutoff = int(test_portion * total_entries)
-val_cutoff = int(val_portion * total_entries)
+times = sorted(time_entries.keys())
 
-train_data = sorted(entries[0:train_cutoff], key=lambda entry: entry['time'])
-test_data = sorted(entries[train_cutoff:train_cutoff+test_cutoff], key=lambda entry: entry['time'])
-val_data = sorted(entries[train_cutoff+test_cutoff:len(entries)], key=lambda entry: entry['time'])
+train_data = []
+test_data = []
+val_data = []
+
+start_time = times[0]
+no_time = False
+
+if not no_time:
+    for time_key in times:
+        entries = time_entries[time_key]
+        np.random.shuffle(entries)
+        total_entries = len(entries)
+        train_cutoff = int(train_portion * total_entries)
+        test_cutoff = int(test_portion * total_entries)
+        val_cutoff = int(val_portion * total_entries)
+        time_train_data = sorted(entries[0:train_cutoff], key=lambda entry: entry['time'])
+        time_test_data = sorted(entries[train_cutoff:train_cutoff+test_cutoff], key=lambda entry: entry['time'])
+        time_val_data = sorted(entries[train_cutoff+test_cutoff:len(entries)], key=lambda entry: entry['time'])
+        train_data = [*train_data, *time_train_data]
+        test_data = [*test_data, *time_test_data]
+        val_data = [*val_data, *time_val_data]
+else:
+    entries = time_entries[start_time]
+    np.random.shuffle(entries)
+    total_entries = len(entries)
+    train_cutoff = int(train_portion * total_entries)
+    test_cutoff = int(test_portion * total_entries)
+    val_cutoff = int(val_portion * total_entries)
+    time_train_data = sorted(entries[0:train_cutoff], key=lambda entry: entry['time'])
+    time_test_data = sorted(entries[train_cutoff:train_cutoff+test_cutoff], key=lambda entry: entry['time'])
+    time_val_data = sorted(entries[train_cutoff+test_cutoff:len(entries)], key=lambda entry: entry['time'])
+    train_data = [*train_data, *time_train_data]
+    test_data = [*test_data, *time_test_data]
+    val_data = [*val_data, *time_val_data]
 
 train_json = {}
 train_json['camera_angle_x'] = camera_angle_x
 train_json['frames'] = []
 i=0
-previous_time = None
 for entry in train_data:
-    if(previous_time is None or entry['time'] != previous_time):
-        previous_time = entry['time']
-        img_dest = os.path.join(base_output_dir, 'train','r_{0:0>3}'.format(i))
-        img_src = entry['image_fname']
-        shutil.copyfile(img_src, img_dest+".png")
-        train_entry = {"file_path": img_dest, "time":entry["time"], "transform_matrix": entry['extrinsic'].tolist()}
-        train_json['frames'].append(train_entry)
-        i = i + 1
-    else:
-        continue
-json.dump(train_json, open("transforms_train.json", 'w'),indent=1)
+    img_dest = os.path.join(base_output_dir, 'train','r_{0:0>3}'.format(i))
+    img_src = entry['image_fname']
+    shutil.copyfile(img_src, img_dest+".png")
+    train_entry = {"file_path": img_dest, "time":entry["time"], "transform_matrix": entry['extrinsic'].tolist()}
+    train_json['frames'].append(train_entry)
+    i = i + 1
+json.dump(train_json, open(os.path.join(base_output_dir, "transforms_train.json"), 'w'),indent=1)
 
 test_json = {}
 test_json['camera_angle_x'] = camera_angle_x
@@ -93,7 +129,7 @@ for entry in test_data:
     test_entry = {"file_path": img_dest, "time":entry["time"], "transform_matrix": entry['extrinsic'].tolist()}
     test_json['frames'].append(test_entry)
     i = i + 1
-json.dump(test_json, open("transforms_test.json", 'w'),indent=1)
+json.dump(test_json, open(os.path.join(base_output_dir, "transforms_test.json"), 'w'),indent=1)
 
 val_json = {}
 val_json['camera_angle_x'] = camera_angle_x
@@ -106,4 +142,4 @@ for entry in val_data:
     val_entry = {"file_path": img_dest, "time":entry["time"], "transform_matrix": entry['extrinsic'].tolist()}
     val_json['frames'].append(val_entry)
     i = i + 1
-json.dump(val_json, open("transforms_val.json", 'w'),indent=1)
+json.dump(val_json, open(os.path.join(base_output_dir, "transforms_val.json"), 'w'),indent=1)

@@ -1,6 +1,6 @@
-expname = bouncingballs_l2
+expname = ball_cube_frame_fix_2
 basedir = ./logs
-datadir = ./data/bouncingballs
+datadir = ./data/BallCube_Take2
 dataset_type = blender
 
 nerf_type = direct_temporal
@@ -20,13 +20,14 @@ testskip = 1
 
 i_weights = 50000
 i_latest = 1000
+i_img = 1000
 
 precrop_iters = 500
-precrop_iters_time = 10000
-precrop_frac = 0.5
+precrop_iters_time = 100000
+precrop_frac = 0.75
 
 half_res = True
 do_half_precision = False
 
-add_deformation_regularization = True
+add_deformation_regularization = False
 deformation_regularization_lambda = 1.e-4
