@@ -4,7 +4,7 @@ import random
 from PartExtractor import DNerfManager
 
 class DeformationField(object):
-    def __init__(self, DNerfManager, times, samples_ranges, samples_n):
+    def __init__(self, DNerfManager, times, samples_ranges, samples_n, additional_samples = None):
         self.manager = DNerfManager
 
         x_samples = torch.Tensor(np.linspace(samples_ranges[0,0].item(),samples_ranges[0,1].item(),samples_n[0].item()))
@@ -19,6 +19,10 @@ class DeformationField(object):
         sample_locations[...,2] = grid_z
 
         sample_locations = sample_locations.flatten(0,2).unsqueeze(0)
+        if(additional_samples is not None):
+            sample_locations = torch.cat((sample_locations, additional_samples), dim = 1)
+        #print(sample_locations.shape)
+        #print(sample_locations)
         # samples contains the time dependant 
         # after init_samples call, will be of shape [N_samples, N_times, 4, 4]
         self.samples = None
@@ -61,6 +65,7 @@ class DeformationField(object):
                     rotation_matrix = self.find_rotation_SVD(original_location_pertubations, deformed_location_pertubations)
                     # fill out the sample's rotation transform & continue
                     self.samples[i_sample, i_t, 0:3, 0:3] = rotation_matrix
+
 
     def find_rotation_SVD(self, p, q):
         p_bar = torch.mean(p, 0)
